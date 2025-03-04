@@ -1,0 +1,208 @@
+---
+title: "Mock"
+output: html_document
+date: "2025-03-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(fpp2)
+library(ggplot2)
+library(forecast)
+library(tidyverse)
+library(lubridate)
+library(TTR)
+library(knitr)
+
+if (!exists("arrivals")) {
+  stop("Error: 'arrivals' dataset is missing. Ensure it's loaded in the environment.")
+}
+
+arrivals <- as.data.frame(arrivals)
+
+# Create time series object
+ts_data <- ts(arrivals[,4], start = c(1981), frequency = 12)
+
+print(ts_data)
+str(ts_data)
+```
+
+
+
+```{r}
+ts_data <- ts(arrivals[,4], start = c(1981), frequency = 12)
+
+plot(ts_data, main="Time Series of US Arrivals to Australia",
+     ylab="Number of Arrivals", xlab="Time", col="blue", type="l")
+```
+
+
+**Observation:** 
+The overall trend indicates a steady increase in the number of arrivals over the years, suggesting growing travel activity from the U.S. to Australia. The fluctuations in the data indicate the presence of seasonal variation, where the number of arrivals appears to peak and dip at regular intervals. The magnitude of fluctuations appears to increase over time, which could indicate increasing volatility in travel patterns. There may be a few data points where the arrivals are significantly higher or lower than expected, suggesting anomalies or external factors influencing travel patterns.
+
+
+```{r}
+boxplot(ts_data, main="Boxplot of US Arrivals to Australia", 
+        ylab="Number of Arrivals", col="lightblue", border="darkblue")
+```
+
+```{r}
+summary(ts_data)
+```
+
+**Observation:**
+The box plot does not show extreme outliers, suggesting that the data is fairly distributed with no significant anomalies. The spread of the box plot suggests moderate to high variability in the number of arrivals over time. 
+
+Hence, the data presents an overall upward trend in U.S. arrivals to Australia. Seasonality plays a major role in the variations observed. The increasing fluctuation range suggests that external factors (e.g., economic conditions, travel policies, global events) may impact travel behaviors.
+
+```{r}
+decomposed_ts <- decompose(ts_data, type = "multiplicative")  
+plot(decomposed_ts)
+```
+
+```{r}
+decomposed_ts$seasonal
+```
+
+**Observation:** Yes, the time series is seasonal.  The decomposition graph shows a clear repeating pattern in the seasonal component.  Since the seasonal fluctuations increase with the trend, the time series follows a multiplicative decomposition.
+
+```{r}
+seasonal_indices <- tapply(decomposed_ts$seasonal, cycle(decomposed_ts$seasonal), mean)
+print(seasonal_indices)
+```
+
+
+**Observation:** 
+
+Highest month: Based on the seasonal indices, January (1.1040) and August (1.0898) have the highest values, meaning more U.S. travelers visit Australia during these months.
+
+Lowest month: February (0.9059) and March (0.9049) show the lowest values, indicating fewer arrivals.
+
+**Possible Reasons:**
+
+High arrivals in January & August:
+January: Peak travel season due to holidays and summer in Australia.
+August: Many travelers visit during the U.S. summer break before schools reopen.
+
+Low arrivals in February & March:
+End of holiday season, schools reopen, and fewer people travel. There are possible financial constraints after the holiday season.
+
+```{r}
+
+seasonally_adjusted <- ts_data / decomposed_ts$seasonal
+
+plot(ts_data, type="l", col="blue", lwd=2, ylab="Number of Arrivals", xlab="Time",
+     main="Seasonally Adjusted Time Series vs Actuals")
+lines(seasonally_adjusted, col="red", lwd=2)
+legend("topleft", legend=c("Actual Data", "Seasonally Adjusted"), 
+       col=c("blue", "red"), lty=1, lwd=2)
+```
+
+
+**Observation: ** 
+Yes, the blue line (actual data) exhibits clear, repeated peaks and dips, which indicate strong seasonal fluctuations in the data. However, after adjusting for seasonality. The red line (seasonally adjusted) follows the overall trend but is much smoother. This confirms that seasonality plays a significant role in influencing arrival patterns.
+
+
+```{r}
+naive_model <- naive(ts_data, h=12)  
+autoplot(naive_model) + 
+  ggtitle("Naïve Forecast for US Arrivals") + 
+  ylab("Number of Arrivals")
+```
+
+
+```{r}
+autoplot(naive_model$residuals) +
+  ggtitle("Residual Plot for Naïve Method") +
+  ylab("Residuals")
+```
+
+**Observation: **
+The residuals exhibit a cyclical pattern rather than appearing completely random. The spread of residuals appears to increase over time, meaning the variance of the errors is not constant.
+
+
+
+```{r}
+ggplot(data.frame(Residuals = naive_model$residuals), aes(x = Residuals)) +
+  geom_histogram(binwidth = 5, fill = "blue", alpha = 0.5, color = "black") +
+  ggtitle("Histogram of Residuals") +
+  xlab("Residuals") +
+  ylab("Frequency")
+```
+
+
+**Observation: ** The histogram shows a bell-shaped distribution, meaning most residuals are centered around zero. However, there is a slight negative skew, suggesting that the model underpredicts arrivals more often than it overpredicts.  Residuals are spread over a wide range, indicating significant variations in forecast errors. There are a few larger residual values on both ends, which might indicate unexpected spikes or drops in US arrivals.
+
+
+```{r}
+
+ggplot(data.frame(Fitted = fitted(naive_model), Residuals = naive_model$residuals),
+       aes(x = Fitted, y = Residuals)) +
+  geom_point(color = "red") +
+  geom_hline(yintercept = 0, linetype="dashed") +
+  ggtitle("Fitted Values vs. Residuals") +
+  xlab("Fitted Values") +
+  ylab("Residuals")
+```
+
+**Observation: ** The residuals are spread out above and below zero, without a clear pattern. This suggests that the Naïve method does not introduce strong bias but fails to capture important trends or seasonality. The spread of residuals increases as fitted values rise, meaning larger forecast errors for higher arrival numbers. This suggests greater unpredictability in high-travel periods, indicating that a better model might be needed.
+
+```{r}
+
+residuals_data <- data.frame(Actual = ts_data, Residuals = naive_model$residuals)
+
+ggplot(residuals_data, aes(x = Actual, y = Residuals)) +
+  geom_point(color = "purple") +
+  geom_hline(yintercept = 0, linetype="dashed") +
+  ggtitle("Actual Values vs. Residuals") +
+  xlab("Actual Values") +
+  ylab("Residuals")
+```
+
+
+**Observation: ** The residuals are scattered above and below zero, but there is some clustering at different actual values. The spread of residuals widens as actual values increase, meaning larger errors occur for periods of high arrivals. This suggests that the Naïve method struggles to forecast peak travel periods accurately. The lower actual values tend to have smaller residuals, while higher actual values show a larger range of errors. This indicates that the model may underpredict during high-arrival months.
+
+
+```{r}
+
+Acf(naive_model$residuals, main="ACF of Residuals from Naïve Forecast")
+```
+
+**Observation: **  Some bars exceed the blue confidence bands, indicating that the residuals are not purely random. This suggests that the Naïve model has left patterns in the errors, meaning that the forecast could be improved. 
+
+```{r}
+
+accuracy(naive_model)
+
+```
+
+
+
+```{r}
+
+forecast_values <- data.frame(Forecast = naive_model$mean)
+kable(forecast_values, caption = "Forecasted US Arrivals for Next Year")
+
+autoplot(naive_model) +
+  ggtitle("Naïve Forecast for US Arrivals (Next Year)") +
+  ylab("Number of Arrivals") +
+  xlab("Year")
+
+```
+
+**Summary of Naïve Forecasting for US Arrivals to Australia:**
+
+Accuracy: The Naïve method assumes that future values will be the same as the most recent observed values, making it a simple but limited forecasting technique. Residual analysis suggests that the Naïve model does not fully capture seasonality or trends, leading to predictable patterns in errors. The forecast has a high degree of uncertainty.
+
+Predicated Value: The forecasted value for each month next year is 106.54, as shown in the forecast table.
+
+Other Observations: The blue shaded prediction interval in the forecast plot widens significantly, indicating greater uncertainty over time. The Naïve method does not account for seasonal peaks and troughs, making it less reliable for datasets with clear patterns. A better alternative would be the Holt-Winters, which would account for seasonality and trend.
+
+
+
+
+
+
+
+
